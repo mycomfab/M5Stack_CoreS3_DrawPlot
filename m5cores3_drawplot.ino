@@ -16,6 +16,7 @@
 #define BUTTON_OFF        1
 #define BUTTON_WIDTH      70
 #define BUTTON_HEIGHT     60
+#define BUTTON_R          10
 #define BUTTON_POS_X      250
 #define BUTTON_POS_Y      10
 #define BUTTON_SPACE_Y    20
@@ -90,7 +91,7 @@ void plot_process(void) {
         }
         if ( x < DRAW_WIDTH ) {
             if ( pen_flag == 1 ) {
-                CoreS3.Display.drawLine(x, y, prev_x, prev_y, RED);
+                draw_bold_line(x, y, prev_x, prev_y, RED);
             } else {
                 pen_flag = 1;
                 Serial1.write(DATA_PLOT_PENDOWN);
@@ -100,6 +101,15 @@ void plot_process(void) {
             prev_y = y;
         }
     }
+    draw_plot_lines();
+    Serial1.write(DATA_PLOT_END);
+    while(!Serial1.available());
+}
+
+void draw_plot_lines(void) {
+    uint32_t ptr;
+    uint16_t  x, y, prev_x, prev_y, pen_flag;
+
     ptr = 0;
     pen_flag = 0;
     while ( ptr < data_ptr ) {
@@ -111,19 +121,26 @@ void plot_process(void) {
         }
         if ( x < DRAW_WIDTH ) {
             if ( pen_flag == 1 ) {
-                CoreS3.Display.drawLine(x, y, prev_x, prev_y, BLACK);
+                draw_bold_line(x, y, prev_x, prev_y, BLACK);
             } else {
                 pen_flag = 1;
             }
             prev_x = x;
             prev_y = y;
         }
-    }
-    Serial1.write(DATA_PLOT_END);
-    while(!Serial1.available());
+    }    
 }
 
-void button_disp(uint8_t no, uint8_t sw) {
+void draw_bold_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const int &color) {
+    int32_t x, y;
+    for ( y = -1 ; y <= 1 ; y++ ) {
+        for ( x = -1 ; x <= 1 ; x++ ) {
+            CoreS3.Display.drawLine(x0+x, y0+y, x1+x, y1+y, color);
+        }
+    }
+}
+
+void draw_button(uint8_t no, uint8_t sw) {
     uint16_t x, y, color;
     
     if ( sw == BUTTON_ON ) {
@@ -137,8 +154,12 @@ void button_disp(uint8_t no, uint8_t sw) {
     } else {
         y = BUTTON_POS_Y + (BUTTON_HEIGHT+BUTTON_SPACE_Y) * no;
     }
-    CoreS3.Display.drawRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, WHITE);
-    CoreS3.Display.fillRect(x+1, y+1, BUTTON_WIDTH-2, BUTTON_HEIGHT-2, color);
+    if ( color == WHITE ) {
+        CoreS3.Display.fillRoundRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, BUTTON_R, WHITE);
+    } else {
+        CoreS3.Display.fillRoundRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, BUTTON_R, BLACK);
+        CoreS3.Display.drawRoundRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, BUTTON_R, WHITE);
+    }
     if ( color == BLACK ) {
         color = WHITE;
     } else {
@@ -148,7 +169,7 @@ void button_disp(uint8_t no, uint8_t sw) {
     CoreS3.Display.drawString(button_text[no], x+BUTTON_WIDTH/2, y+BUTTON_HEIGHT/2);
 }
 
-void data_disp()
+void draw_data_ptr(void)
 {
     CoreS3.Display.setTextColor(WHITE);
     CoreS3.Display.setFont(&fonts::Font0);
@@ -158,13 +179,13 @@ void data_disp()
     CoreS3.Display.setFont(&fonts::Font4);
 }
 
-void screen_init()
+void draw_init(void)
 {
     CoreS3.Display.fillScreen(BLACK);
     CoreS3.Display.fillRect(DRAW_POS_X, DRAW_POS_Y, DRAW_WIDTH, DRAW_HEIGHT, WHITE);
-    button_disp(BUTTON_UNDO,  BUTTON_OFF);
-    button_disp(BUTTON_CLEAR, BUTTON_OFF);
-    button_disp(BUTTON_PLOT,  BUTTON_OFF);
+    draw_button(BUTTON_UNDO,  BUTTON_OFF);
+    draw_button(BUTTON_CLEAR, BUTTON_OFF);
+    draw_button(BUTTON_PLOT,  BUTTON_OFF);
 }
 
 void setup() {
@@ -175,13 +196,13 @@ void setup() {
     CoreS3.Display.setFont(&fonts::Font4);
     CoreS3.Display.setTextSize(1);
     
-    screen_init();
+    draw_init();
     prev_x = -1;
     prev_y = -1;
     touch_on  = false;
     button_on = false;
     data_ptr = 0;
-    data_disp();
+    draw_data_ptr();
     
     plot_init();
 }
@@ -202,7 +223,7 @@ void loop() {
                 data[data_ptr++] = DATA_PLOT_PENUP;
                 data[data_ptr++] = t.x;
                 data[data_ptr++] = t.y;
-                data_disp();
+                draw_data_ptr();
             }
         }
     }
@@ -210,13 +231,13 @@ void loop() {
     if ( touch_on == true ) {
         if( t.x >= DRAW_POS_X && t.x < DRAW_POS_X+DRAW_WIDTH && t.y >= DRAW_POS_Y && t.y < DRAW_POS_Y+DRAW_HEIGHT ) {
             if ( t.x != prev_x || t.y != prev_y ) {
-                CoreS3.Display.drawLine(t.x, t.y, prev_x, prev_y, BLACK);
+                draw_bold_line(t.x, t.y, prev_x, prev_y, BLACK);
                 prev_x = t.x;
                 prev_y = t.y;
                 if ( data_ptr < DATA_SIZE-2 ) {
                     data[data_ptr++] = t.x;
                     data[data_ptr++] = t.y;
-                    data_disp();
+                    draw_data_ptr();
                 }
             }
         }
@@ -230,32 +251,33 @@ void loop() {
         if ( t.x >= BUTTON_POS_X ) {
             if ( t.y > BUTTON_POS_Y+2 && t.y < BUTTON_POS_Y+BUTTON_HEIGHT-2) {
                 button_on = true;
-                button_disp(BUTTON_UNDO, BUTTON_ON);
+                draw_button(BUTTON_UNDO, BUTTON_ON);
                 if ( data_ptr > 0 ) {
                     do {
                         y = data[--data_ptr];
                         x = data[--data_ptr];
                         d = data[data_ptr-1];
-                        CoreS3.Display.drawLine(x, y, prev_x, prev_y, WHITE);
+                        draw_bold_line(x, y, prev_x, prev_y, WHITE);
                         prev_x = x;
                         prev_y = y;
                     } while ( d != DATA_PLOT_PENUP );
                     data_ptr--;
-                    data_disp();
+                    draw_plot_lines();
+                    draw_data_ptr();
                 }
             } else if ( t.y > BUTTON_POS_Y+(BUTTON_HEIGHT+BUTTON_SPACE_Y)+2 && t.y < BUTTON_POS_Y+(BUTTON_HEIGHT*2+BUTTON_SPACE_Y)+2) {
                 button_on = true;
-                button_disp(BUTTON_CLEAR, BUTTON_ON);
+                draw_button(BUTTON_CLEAR, BUTTON_ON);
                 CoreS3.Display.fillRect(DRAW_POS_X, DRAW_POS_Y, DRAW_WIDTH, DRAW_HEIGHT, WHITE);
                 data_ptr = 0;
-                data_disp();
+                draw_data_ptr();
             } else if ( t.y > BUTTON_POS_Y+(BUTTON_HEIGHT*2+BUTTON_SPACE_Y*2)+2 && t.y < BUTTON_POS_Y+(BUTTON_HEIGHT*3+BUTTON_SPACE_Y*2)+2) {
-                button_disp(BUTTON_PLOT_WAIT, BUTTON_ON);
+                draw_button(BUTTON_PLOT_WAIT, BUTTON_ON);
                 if ( plot_wait() ) {
-                    button_disp(BUTTON_PLOT, BUTTON_ON);
+                    draw_button(BUTTON_PLOT, BUTTON_ON);
                     plot_process();
                 }
-                button_disp(BUTTON_PLOT, BUTTON_OFF);
+                draw_button(BUTTON_PLOT, BUTTON_OFF);
             }
         }
     }
@@ -266,22 +288,24 @@ void loop() {
        || td.state == m5::touch_state_t::drag_end ) {
         if ( touch_on == true ) {
             touch_on = false;
-            if ( t.x != prev_x || t.y != prev_y ) {
-                CoreS3.Display.drawLine(t.x, t.y, prev_x, prev_y, BLACK);
-                prev_x = t.x;
-                prev_y = t.y;
-                if ( data_ptr < DATA_SIZE-2 ) {
-                    data[data_ptr++] = t.x;
-                    data[data_ptr++] = t.y;
-                    data_disp();
+            if( t.x >= DRAW_POS_X && t.x < DRAW_POS_X+DRAW_WIDTH && t.y >= DRAW_POS_Y && t.y < DRAW_POS_Y+DRAW_HEIGHT ) {
+                if ( t.x != prev_x || t.y != prev_y ) {
+                    draw_bold_line(t.x, t.y, prev_x, prev_y, BLACK);
+                    prev_x = t.x;
+                    prev_y = t.y;
+                    if ( data_ptr < DATA_SIZE-2 ) {
+                        data[data_ptr++] = t.x;
+                        data[data_ptr++] = t.y;
+                        draw_data_ptr();
+                    }
                 }
             }
         }
         if ( button_on == true ) {
             button_on = false;
-            button_disp(BUTTON_UNDO,  BUTTON_OFF);
-            button_disp(BUTTON_CLEAR, BUTTON_OFF);
-            button_disp(BUTTON_PLOT,  BUTTON_OFF);
+            draw_button(BUTTON_UNDO,  BUTTON_OFF);
+            draw_button(BUTTON_CLEAR, BUTTON_OFF);
+            draw_button(BUTTON_PLOT,  BUTTON_OFF);
         }
     }
 }
